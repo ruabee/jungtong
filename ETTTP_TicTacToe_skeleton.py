@@ -1,87 +1,149 @@
+import random
 import tkinter as tk
 from socket import *
+import _thread
+from ETTTP_utils import normalize_debug_msg
+
 
 SIZE = 1024
 
 class TTT(tk.Tk):
-    def __init__(self, target_socket, src_addr, dst_addr, client=True):
+    def __init__(self, target_socket, src_addr, dst_addr, client=True, command_mode=False):
         super().__init__()
-        self.geometry('500x800')
-        self.socket = target_socket
-        self.send_ip = dst_addr
-        self.recv_ip = src_addr
-        self.client = client
-
-        self.line_size = 3
-        self.total_cells = self.line_size * self.line_size
+        
         self.my_turn = -1
-        self.board = [0] * self.total_cells
-        self.remaining_moves = list(range(self.total_cells))
-        self.active = 'GAME ACTIVE'
+        self.geometry('500x800')
 
-        self.board_bg = 'red'
+        self.active = 'GAME ACTIVE'
+        self.socket = target_socket
+        self.command_mode = command_mode
+        
+        self.send_ip = dst_addr  # 상대 IP
+        self.recv_ip = src_addr  # 내 IP
+        
+        self.total_cells = 9
+        self.line_size = 3
+        
+        # 클라이언트/서버별 UI 및 심볼 설정
+        if client:
+            self.myID = 1
+            self.title('34743-01-Tic-Tac-Toe Client')
+            self.user = {
+                'value': 1, 'bg': 'orange',
+                'win': 'Result: You Won!', 'text':'X','Name':"YOU"
+            }
+            self.computer = {
+                'value': self.line_size+1, 'bg': 'blue',
+                'win': 'Result: You Lost!', 'text':'O','Name':"ME"
+            }
+        else:
+            self.myID = 0
+            self.title('34743-01-Tic-Tac-Toe Server')
+            self.user = {
+                'value': self.line_size+1, 'bg': 'blue',
+                'win': 'Result: You Won!', 'text':'O','Name':"ME"
+            }
+            self.computer = {
+                'value': 1, 'bg': 'orange',
+                'win': 'Result: You Lost!', 'text':'X','Name':"YOU"
+            }
+        
+        self.board_bg = 'white'
         self.all_lines = (
             (0,1,2),(3,4,5),(6,7,8),
             (0,3,6),(1,4,7),(2,5,8),
             (0,4,8),(2,4,6)
         )
 
-        if client:
-            self.myID = 1
-            self.title('Tic-Tac-Toe Client')
-            self.user = {'value': 1, 'bg': 'orange', 'win': 'You Won!', 'text':'X','Name':'YOU'}
-            self.computer = {'value': 2, 'bg': 'blue', 'win': 'You Lost!', 'text':'O','Name':'ME'}
-        else:
-            self.myID = 0
-            self.title('Tic-Tac-Toe Server')
-            self.user = {'value': 2, 'bg': 'blue', 'win': 'You Won!', 'text':'O','Name':'ME'}
-            self.computer = {'value': 1, 'bg': 'orange', 'win': 'You Lost!', 'text':'X','Name':'YOU'}
-
         self.create_control_frame()
+        if self.command_mode:
+            self.create_command_mode_widgets()
 
     def create_control_frame(self):
         self.control_frame = tk.Frame()
         self.control_frame.pack(side=tk.TOP)
-        self.b_quit = tk.Button(self.control_frame, text='Quit', command=self.quit)
+        self.b_quit = tk.Button(
+            self.control_frame, text='Quit', command=self.quit
+        )
         self.b_quit.pack(side=tk.RIGHT)
+
+
+#디버깅 모드 추가 코드
+    def create_command_mode_widgets(self):
+        self.debug_frame = tk.Frame(self, bg="black")
+        self.debug_frame.pack(side=tk.BOTTOM, pady=10, fill=tk.X)
+
+        self.status_indicator = tk.Label(self.debug_frame, text='●', font=('Helvetica', 20), fg='green', bg='black')
+        self.status_indicator.pack(side=tk.LEFT, padx=10)
+
+        self.status_label = tk.Label(self.debug_frame, text='Ready', font=('Helvetica', 14), fg='white', bg='black')
+        self.status_label.pack(side=tk.LEFT, padx=5)
+
+        self.debug_entry = tk.Text(self.debug_frame, width=50)
+        self.debug_entry.pack(side=tk.LEFT, padx=10)
+
+        self.debug_button = tk.Button(self.debug_frame, text='Send', command=self.send_debug_message)
+        self.debug_button.pack(side=tk.LEFT, padx=5)
+
+
+    #디버깅 모드 전용 예외처리 확인 코드 일단 적어둘게요
+    def send_debug_message(self):
+        msg = self.debug_entry.get("1.0", "end").strip()
+        if msg:
+            try:
+                normalized_msg = normalize_debug_msg(msg)
+                self.socket.send(normalized_msg.encode())
+                # 수신 대기하여 오류 발생 여부 확인
+                ack = self.socket.recv(SIZE).decode()
+                if not check_msg(ack, self.send_ip):
+                    self.status_label.config(text='Invalid response', fg='red')
+            except Exception as e:
+                print(f'[DEBUG ERROR] {e}')
+                self.status_label.config(text='Error occurred', fg='red')
+
+
 
     def create_status_frame(self):
         self.status_frame = tk.Frame()
-        self.status_frame.pack(side=tk.TOP, fill=tk.X)
-        self.l_status_bullet = tk.Label(self.status_frame, text='O', font=('Helevetica',25,'bold'))
+        self.status_frame.pack(expand=True, anchor='w', padx=20)
+        self.l_status_bullet = tk.Label(
+            self.status_frame, text='O',
+            font=('Helevetica',25,'bold')
+        )
         self.l_status_bullet.pack(side=tk.LEFT, anchor='w')
-        self.l_status = tk.Label(self.status_frame, font=('Helevetica',25,'bold'))
+        self.l_status = tk.Label(
+            self.status_frame, font=('Helevetica',25,'bold')
+        )
         self.l_status.pack(side=tk.RIGHT, anchor='w')
 
     def create_result_frame(self):
         self.result_frame = tk.Frame()
-        self.result_frame.pack(side=tk.TOP, fill=tk.X)
-        self.l_result = tk.Label(self.result_frame, font=('Helevetica',25,'bold'))
+        self.result_frame.pack(expand=True, anchor='w', padx=20)
+        self.l_result = tk.Label(
+            self.result_frame, font=('Helevetica',25,'bold')
+        )
         self.l_result.pack(side=tk.BOTTOM, anchor='w')
 
     def create_board_frame(self):
-        self.board_frame = tk.Frame(self)
-        self.board_frame.pack(expand=True, fill="both")
+        self.board_frame = tk.Frame()
+        self.board_frame.pack(expand=True)
         self.cell = [None] * self.total_cells
         self.setText = [None] * self.total_cells
-
-        for i in range(self.line_size):
-            self.board_frame.rowconfigure(i, weight=1)
-            self.board_frame.columnconfigure(i, weight=1)
+        self.board = [0] * self.total_cells
+        self.remaining_moves = list(range(self.total_cells))
 
         for i in range(self.total_cells):
-            r, c = divmod(i, self.line_size)
             self.setText[i] = tk.StringVar()
             self.setText[i].set("  ")
             lbl = tk.Label(
                 self.board_frame,
                 highlightthickness=1, borderwidth=5, relief='solid',
-                width=10, height=5, bg=self.board_bg, compound="center",
-                textvariable=self.setText[i],  # ← 이게 있어야 실시간 갱신됨
-                font=('Helevetica', 30, 'bold')
+                width=5, height=3, bg=self.board_bg, compound="center",
+                textvariable=self.setText[i],
+                font=('Helevetica',30,'bold')
             )
-
             lbl.bind('<Button-1>', lambda e, mv=i: self.my_move(e, mv))
+            r, c = divmod(i, self.line_size)
             lbl.grid(row=r, column=c, sticky="nsew")
             self.cell[i] = lbl
 
@@ -100,9 +162,7 @@ class TTT(tk.Tk):
             self.my_turn = 0
             self.l_status_bullet.config(fg='red')
             self.l_status['text'] = ['Hold']
-            self.after(100, self.get_move)
-
-        self.update_idletasks()
+            _thread.start_new_thread(self.get_move, ())
 
     def quit(self):
         self.destroy()
@@ -119,7 +179,7 @@ class TTT(tk.Tk):
             self.my_turn = 0
             self.l_status_bullet.config(fg='red')
             self.l_status['text'] = ['Hold']
-            self.after(100, self.get_move)
+            _thread.start_new_thread(self.get_move, ())
 
     def get_move(self):
         try:
@@ -135,9 +195,12 @@ class TTT(tk.Tk):
             self.quit()
             return
 
+        # 상대가 보낸 MOVE
         if parsed['cmd']=='SEND' and 'New-Move' in parsed['headers']:
-            r,c = map(int, parsed['headers']['New-Move'].strip('()').split(','))
+            r,c = map(int, parsed['headers']['New-Move']
+                      .strip('()').split(','))
             loc = r * self.line_size + c
+            # ACK 전송
             ack = msg.replace('SEND','ACK',1)
             try:
                 self.socket.send(ack.encode())
@@ -151,6 +214,52 @@ class TTT(tk.Tk):
                 self.my_turn = 1
                 self.l_status_bullet.config(fg='green')
                 self.l_status['text'] = ['Ready']
+
+        # 상대가 보낸 RESULT
+        elif parsed['cmd']=='RESULT':
+            peer_winner = parsed['headers'].get('Winner')
+            # ACK for RESULT
+            ack_res = msg.replace('RESULT','ACK',1)
+            try:
+                self.socket.send(ack_res.encode())
+            except:
+                self.socket.close()
+                self.quit()
+                return
+
+            # 로컬 결과 계산
+            my_calc = None
+            sum_user = self.line_size * self.user['value']
+            sum_comp = self.line_size * self.computer['value']
+            over = False
+            for line in self.all_lines:
+                if sum(self.board[i] for i in line)==sum_user:
+                    my_calc = self.user['Name']; over=True; break
+                if sum(self.board[i] for i in line)==sum_comp:
+                    my_calc = self.computer['Name']; over=True; break
+            if not over and not self.remaining_moves:
+                my_calc = 'DRAW'
+
+            if peer_winner==my_calc:
+                # 일치하면 화면에 표시
+                if peer_winner==self.user['Name']:
+                    self.state=self.user['win']; self.l_result['text']=self.user['win']
+                elif peer_winner==self.computer['Name']:
+                    self.state=self.computer['win']; self.l_result['text']=self.computer['win']
+                else:
+                    self.state='Result: Draw!'; self.l_result['text']='Result: Draw!'
+                for i in range(self.total_cells):
+                    self.cell[i].unbind('<Button-1>')
+                self.my_turn=0
+            else:
+                self.l_result['text']="Somethings wrong..."
+                self.socket.close()
+                self.quit()
+
+        else:
+            # 예기치 않은 메시지
+            self.socket.close()
+            self.quit()
 
     def send_move(self, selection):
         row, col = divmod(selection, self.line_size)
@@ -170,6 +279,26 @@ class TTT(tk.Tk):
         except:
             return False
 
+    def check_result(self, winner_name, get=False):
+        # 보드는 이미 업데이트된 상태이므로, 일치 여부만 확인
+        # get=False(내가 먼저 RESULT 보낼 때), get=True(상대 RESULT 비교)
+        my_calc = None
+        sum_user = self.line_size * self.user['value']
+        sum_comp = self.line_size * self.computer['value']
+        over=False
+        for line in self.all_lines:
+            if sum(self.board[i] for i in line)==sum_user:
+                my_calc=self.user['Name']; over=True; break
+            if sum(self.board[i] for i in line)==sum_comp:
+                my_calc=self.computer['Name']; over=True; break
+        if not over and not self.remaining_moves:
+            my_calc='DRAW'
+        if not get:
+            # (이 부분은 이미 get_move/RESULT에서 처리했으므로 그대로 True 처리)
+            return True
+        else:
+            return (winner_name==my_calc)
+
     def update_board(self, player, move, get=False):
         if move in self.remaining_moves:
             self.board[move] = player['value']
@@ -178,13 +307,41 @@ class TTT(tk.Tk):
         self.last_click = move
         self.setText[move].set(player['text'])
         self.cell[move]['bg'] = player['bg']
+        self.update_status(player, get=get)
 
+    def update_status(self, player, get=False):
+        winner_sum = self.line_size * player['value']
+        won=False
+        for line in self.all_lines:
+            if sum(self.board[i] for i in line)==winner_sum:
+                self.highlight_winning_line(player, line)
+                self.state=player['win']
+                winner=player['Name']
+                won=True
+                break
+        if not won and not self.remaining_moves:
+            self.state='Result: Draw!'
+            self.l_result['text']='Result: Draw!'
+            won=True
+            winner='DRAW'
+
+        if won:
+            self.l_status_bullet.config(fg='red')
+            self.l_status['text']=['Hold']
+            correct=self.check_result(winner, get=get)
+            if correct and self.state!='Result: Draw!':
+                self.l_result['text']=self.state
+            elif not correct:
+                self.l_result['text']="Somethings wrong..."
+            for i in range(self.total_cells):
+                self.cell[i].unbind('<Button-1>')
+            self.my_turn=0
+
+    def highlight_winning_line(self, player, line):
+        for i in line:
+            self.cell[i]['bg']='red'
 
 def check_msg(msg, peer_ip):
-    print("===== check_msg 입력값 확인 =====")
-    print("msg ↓↓↓↓↓↓")
-    print(msg)
-    print("peer_ip:", peer_ip)
     lines = msg.split('\r\n')
     if len(lines)<3: return False
     parts = lines[0].split(' ')
@@ -200,6 +357,7 @@ def check_msg(msg, peer_ip):
         headers[k.strip()]=v.strip()
         idx+=1
     if headers.get('Host')!=peer_ip: return False
+    # New-Move / First-Move / Winner 유효 검사
     if cmd in ('SEND','ACK'):
         if 'New-Move' in headers:
             try:
@@ -213,3 +371,5 @@ def check_msg(msg, peer_ip):
         if headers.get('Winner') not in ('ME','YOU','DRAW'):
             return False
     return {'cmd':cmd,'version':ver,'headers':headers}
+           
+
