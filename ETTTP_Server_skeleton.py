@@ -59,3 +59,8 @@ if __name__ == '__main__':
        root.mainloop()
       
        client_socket.close()
+
+ break
+
+
+   server_socket.close()
