@@ -6,7 +6,6 @@ import _thread
 
 from ETTTP_TicTacToe_skeleton import TTT, check_msg
 
-
 if __name__ == '__main__':
   
    SERVER_PORT = 12000
@@ -19,12 +18,10 @@ if __name__ == '__main__':
    while True:
        client_socket, client_addr = server_socket.accept()
       
-       start = random.randrange(0,2)   # 0=server, 1=client 중 누가 먼저 둘지
+       start = random.randrange(0,2)   # 0=server, 1=client 중 누가 먼저 둘 지 정하기
 
-
-       ###################################################################
-       # 1) 서버 → 클라이언트: 첫 수(First-Move) 정보 전송
-       #    'YOU'는 상대(클라이언트)가 먼저, 'ME'는 서버(Self)가 먼저
+       # 서버가 클라이언트에게 첫 수(First-Move) 정보를 전송
+       # 'YOU'는 상대(클라이언트)가 먼저, 'ME'는 서버(Self)가 먼저
        first_val = 'YOU' if start == 1 else 'ME'
        send_msg = (
            f"SEND ETTTP/1.0\r\n"
@@ -34,22 +31,19 @@ if __name__ == '__main__':
        )
        client_socket.send(send_msg.encode())
 
-
-       # 2) 서버는 클라이언트로부터 ACK 수신
+       #서버는 클라이언트로부터 ACK 수신
        try:
            ack = client_socket.recv(SIZE).decode()
        except:
            client_socket.close()
-           raise RuntimeError("ACK not received for initial handshake")
+           raise RuntimeError("초기 수신에 대하여 ACK가 수신되지 않았습니다")
 
-
-       # 3) ACK 검증
+       #ACK 검증 (잘 수신 되었는지 확인)
        if not ack.startswith('ACK ETTTP/1.0') or not check_msg(ack, client_addr[0]):
            client_socket.close()
-           raise RuntimeError("ACK not received for initial handshake")
-       ###################################################################
+           raise RuntimeError("초기 수신에 대하여 ACK가 수신되지 않았습니다")
       
-       # 이후부터는 기존 GUI + 게임 루프
+       # 기존 GUI + 게임
        root = TTT(client=False,
                   target_socket=client_socket,
                   src_addr=MY_IP,

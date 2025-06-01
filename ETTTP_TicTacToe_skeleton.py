@@ -23,7 +23,7 @@ class TTT(tk.Tk):
         self.total_cells = 9
         self.line_size = 3
         
-        # 클라이언트/서버별 UI 및 심볼 설정
+        # 클라이언트와 서버 UI 설정
         if client:
             self.myID = 1
             self.title('34743-01-Tic-Tac-Toe Client')
@@ -58,6 +58,7 @@ class TTT(tk.Tk):
         if self.command_mode:
             self.create_command_mode_widgets()
 
+    #Quit 버튼 UI
     def create_control_frame(self):
         self.control_frame = tk.Frame()
         self.control_frame.pack(side=tk.TOP)
@@ -66,6 +67,7 @@ class TTT(tk.Tk):
         )
         self.b_quit.pack(side=tk.RIGHT)
 
+    #Hold랑 Ready 상태 알려주는 UI
     def create_status_frame(self):
         self.status_frame = tk.Frame()
         self.status_frame.pack(expand=True, anchor='w', padx=20)
@@ -79,6 +81,7 @@ class TTT(tk.Tk):
         )
         self.l_status.pack(side=tk.RIGHT, anchor='w')
 
+    #결과 출력해주는 UI
     def create_result_frame(self):
         self.result_frame = tk.Frame()
         self.result_frame.pack(expand=True, anchor='w', padx=20)
@@ -87,6 +90,7 @@ class TTT(tk.Tk):
         )
         self.l_result.pack(side=tk.BOTTOM, anchor='w')
 
+    #틱택톡 보드 UI
     def create_board_frame(self):
         self.board_frame = tk.Frame()
         self.board_frame.pack(expand=True)
@@ -110,6 +114,7 @@ class TTT(tk.Tk):
             lbl.grid(row=r, column=c, sticky="nsew")
             self.cell[i] = lbl
 
+    #게임 시작
     def play(self, start_user=1):
         self.last_click = 0
         self.create_board_frame()
@@ -127,23 +132,32 @@ class TTT(tk.Tk):
             self.l_status['text'] = ['Hold']
             _thread.start_new_thread(self.get_move, ())
 
+    #창 닫기 위한 버튼
     def quit(self):
         self.destroy()
 
     def my_move(self, e, user_move):
+        #내 차례 아니거나 선택한 칸이 이미 채워져 있으면 아무 동작 하지 않도록 하기
         if self.board[user_move] != 0 or not self.my_turn:
             return
+        #상대에게 내가 둔 수를 전송
         valid = self.send_move(user_move)
+        #상대방으로부터 ACK오는지 확인
         if not valid:
             self.quit()
             return
+        
+        #상대방이 선택한 위치를 기준으로 보드를 갱신
         self.update_board(self.user, user_move)
+
+        # 게임이 끝나지 않으면 차례 변경
         if self.state == self.active:
             self.my_turn = 0
             self.l_status_bullet.config(fg='red')
             self.l_status['text'] = ['Hold']
             _thread.start_new_thread(self.get_move, ())
 
+    #상대방의 움직임을 가져오기
     def get_move(self):
         try:
             msg = self.socket.recv(SIZE).decode()
@@ -239,7 +253,7 @@ class TTT(tk.Tk):
             self.debug_frame,
             text="Send",
             font=("Helvetica", 12),
-            bg="#4CAF50",       # 녹색 버튼
+            bg="white",
             fg="black",
             command=self.send_debug
         )
@@ -271,7 +285,7 @@ class TTT(tk.Tk):
                 self.my_turn = 0
                 self.l_status_bullet.config(fg='red')
                 self.l_status['text'] = ['Hold']
-            # 8) 상대 턴으로 전환: get_move() 스레드 시작
+            #상대 턴으로 전환 : get_move() 스레드 시작
                 _thread.start_new_thread(self.get_move, ())
 
         except Exception as e:
@@ -310,11 +324,11 @@ class TTT(tk.Tk):
         if not over and not self.remaining_moves:
             my_calc='DRAW'
         if not get:
-            # (이 부분은 이미 get_move/RESULT에서 처리했으므로 그대로 True 처리)
             return True
         else:
             return (winner_name==my_calc)
 
+    #보드를 응답을 바탕으로 업데이트한다
     def update_board(self, player, move, get=False):
         if move in self.remaining_moves:
             self.board[move] = player['value']
@@ -325,6 +339,7 @@ class TTT(tk.Tk):
         self.cell[move]['bg'] = player['bg']
         self.update_status(player, get=get)
 
+    #승리자와 패배자를 나타낸다
     def update_status(self, player, get=False):
         winner_sum = self.line_size * player['value']
         won=False
@@ -373,7 +388,7 @@ def check_msg(msg, peer_ip):
         headers[k.strip()]=v.strip()
         idx+=1
     if headers.get('Host')!=peer_ip: return False
-    # New-Move / First-Move / Winner 유효 검사
+    # New-Move , First-Move , Winner 유효 검사
     if cmd in ('SEND','ACK'):
         if 'New-Move' in headers:
             try:
