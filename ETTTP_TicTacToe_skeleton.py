@@ -246,36 +246,34 @@ class TTT(tk.Tk):
         # Entry와 약간 간격을 두고 붙여줍니다.
         self.debug_button.pack(side=tk.TOP, anchor='center', pady=(0, 10), ipady=2)
 
-    #텍스트 박스에서 엔터로 입력된 문자열을 ETTTP용으로 바꿔줌
-    def normalize_debug_msg(raw_msg):
-        lines = raw_msg.strip().split('\n')
-        return '\r\n'.join(line.strip() for line in lines) + '\r\n\r\n'
-
     def send_debug(self):
         raw = self.debug_entry.get().strip()
         if not raw:
             return
         try:
             msg_with_crlf = raw.replace(r'\r\n', '\r\n')
-        #이제 실제 CRLF가 들어간 문자열을 소켓으로 전송
+        #소켓으로 전송
             self.socket.send(msg_with_crlf.encode())
 
-        #보낸거 좌표로 구해서 표시하기
+        #보낸 메시지 좌표로 구하기
             parsed = check_msg(msg_with_crlf, self.send_ip)
             r, c = map(int, parsed['headers']['New-Move'].strip('()').split(','))
             loc = r * self.line_size + c
-        # **보드에 내 기호를 그림**  ← 이 부분이 빠졌기 때문에 화면에 표시되지 않습니다.
-            self.update_board(self.user, loc)
-        # ACK를 한 번 받아 보고, 정상 포맷인지 검사
+            # ACK를 한 번 받아 보고, 정상 포맷인지 검사
             ack = self.socket.recv(SIZE).decode()
             if not check_msg(ack, self.send_ip) or not ack.startswith('ACK ETTTP/1.0'):
                 return
-            else:
+            
+        # 보드에 내 기호를 그림
+            self.update_board(self.user, loc)
+
+            if self.state == self.active:    # always after my move
                 self.my_turn = 0
                 self.l_status_bullet.config(fg='red')
                 self.l_status['text'] = ['Hold']
             # 8) 상대 턴으로 전환: get_move() 스레드 시작
                 _thread.start_new_thread(self.get_move, ())
+
         except Exception as e:
             print(f'[DEBUG ERROR] {e}')
 
