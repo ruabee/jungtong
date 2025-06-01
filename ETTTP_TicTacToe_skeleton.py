@@ -73,34 +73,61 @@ class TTT(tk.Tk):
         self.debug_frame = tk.Frame(self, bg="black")
         self.debug_frame.pack(side=tk.BOTTOM, pady=10, fill=tk.X)
 
-        self.status_indicator = tk.Label(self.debug_frame, text='●', font=('Helvetica', 20), fg='green', bg='black')
-        self.status_indicator.pack(side=tk.LEFT, padx=10)
+        #debug_input_example 보니 한줄 => Text 대신에 Entry(한줄 입력짜리)로 변경
+        self.debug_entry = tk.Entry(self.debug_frame, width=40, bg="white", fg="black", font=("Helvetica", 12))
+        self.debug_entry.pack(side=tk.TOP, anchor='center', pady=(10, 5))
 
-        self.status_label = tk.Label(self.debug_frame, text='Ready', font=('Helvetica', 14), fg='white', bg='black')
-        self.status_label.pack(side=tk.LEFT, padx=5)
-
-        self.debug_entry = tk.Text(self.debug_frame, width=50)
-        self.debug_entry.pack(side=tk.LEFT, padx=10)
-
-        self.debug_button = tk.Button(self.debug_frame, text='Send', command=self.send_debug_message)
-        self.debug_button.pack(side=tk.LEFT, padx=5)
+        #Send 버튼
+        self.debug_button = tk.Button(
+            self.debug_frame,
+            text="Send",
+            font=("Helvetica", 12),
+            bg="#4CAF50",       # 녹색 버튼
+            fg="black",
+            command=self.send_debug_message
+        )
+        # Entry와 약간 간격을 두고 붙여줍니다.
+        self.debug_button.pack(side=tk.TOP, anchor='center', pady=(0, 10), ipady=2)
 
 
     #디버깅 모드 전용 예외처리 확인 코드 일단 적어둘게요
     def send_debug_message(self):
-        msg = self.debug_entry.get("1.0", "end").strip()
-        if msg:
-            try:
-                normalized_msg = normalize_debug_msg(msg)
-                self.socket.send(normalized_msg.encode())
-                # 수신 대기하여 오류 발생 여부 확인
-                ack = self.socket.recv(SIZE).decode()
-                if not check_msg(ack, self.send_ip):
-                    self.status_label.config(text='Invalid response', fg='red')
-            except Exception as e:
-                print(f'[DEBUG ERROR] {e}')
-                self.status_label.config(text='Error occurred', fg='red')
+        raw = self.debug_entry.get().strip()
+        if not raw:
+            return
 
+        try:
+        # 1) 사용자가 입력한 "\\r\\n" 시퀀스를 실제 CRLF로 바꿔 줍니다.
+        #    r'\r\n' 은 파이썬 raw 문자열 리터럴에서 “백슬래시+r, 백슬래시+n”을 의미합니다.
+            msg_with_crlf = raw.replace(r'\r\n', '\r\n')
+        # 2) 프로토콜상 맨 끝에는 반드시 "\r\n\r\n"이 와야 하므로, 없으면 붙여 줍니다.
+            if not msg_with_crlf.endswith('\r\n\r\n'):
+                msg_with_crlf += '\r\n\r\n'
+        # 3) 이제 실제 CRLF가 들어간 문자열을 소켓으로 전송
+            self.socket.send(msg_with_crlf.encode())
+
+        #보낸거 좌표로 구해서 표시하기
+            parsed = check_msg(msg_with_crlf, self.send_ip)
+            r, c = map(int, parsed['headers']['New-Move'].strip('()').split(','))
+            loc = r * self.line_size + c
+
+        # 4) **보드에 내 기호를 그림**  ← 이 부분이 빠졌기 때문에 화면에 표시되지 않습니다.
+            self.update_board(self.user, loc)
+
+
+        # 4) ACK를 한 번 받아 보고, 정상 포맷인지 검사
+            ack = self.socket.recv(SIZE).decode()
+            if not check_msg(ack, self.send_ip) or not ack.startswith('ACK ETTTP/1.0'):
+                return
+            else:
+                self.my_turn = 0
+                self.l_status_bullet.config(fg='red')
+                self.l_status['text'] = ['Hold']
+            # 8) 상대 턴으로 전환: get_move() 스레드 시작
+                _thread.start_new_thread(self.get_move, ())
+
+        except Exception as e:
+            print(f'[DEBUG ERROR] {e}')
 
 
     def create_status_frame(self):
@@ -137,7 +164,7 @@ class TTT(tk.Tk):
             self.setText[i].set("  ")
             lbl = tk.Label(
                 self.board_frame,
-                highlightthickness=1, borderwidth=5, relief='solid',
+                highlightthickness=0, borderwidth=5, relief='solid',
                 width=5, height=3, bg=self.board_bg, compound="center",
                 textvariable=self.setText[i],
                 font=('Helevetica',30,'bold')

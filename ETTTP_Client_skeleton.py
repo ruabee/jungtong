@@ -3,7 +3,6 @@ import tkinter as tk
 from socket import *
 import _thread
 
-
 from ETTTP_TicTacToe_skeleton import TTT, check_msg
   
 if __name__ == '__main__':
