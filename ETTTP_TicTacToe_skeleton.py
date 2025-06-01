@@ -2,7 +2,6 @@ import random
 import tkinter as tk
 from socket import *
 import _thread
-from ETTTP_utils import normalize_debug_msg
 
 
 SIZE = 1024
@@ -66,69 +65,6 @@ class TTT(tk.Tk):
             self.control_frame, text='Quit', command=self.quit
         )
         self.b_quit.pack(side=tk.RIGHT)
-
-
-#디버깅 모드 추가 코드
-    def create_command_mode_widgets(self):
-        self.debug_frame = tk.Frame(self, bg="black")
-        self.debug_frame.pack(side=tk.BOTTOM, pady=10, fill=tk.X)
-
-        #debug_input_example 보니 한줄 => Text 대신에 Entry(한줄 입력짜리)로 변경
-        self.debug_entry = tk.Entry(self.debug_frame, width=40, bg="white", fg="black", font=("Helvetica", 12))
-        self.debug_entry.pack(side=tk.TOP, anchor='center', pady=(10, 5))
-
-        #Send 버튼
-        self.debug_button = tk.Button(
-            self.debug_frame,
-            text="Send",
-            font=("Helvetica", 12),
-            bg="#4CAF50",       # 녹색 버튼
-            fg="black",
-            command=self.send_debug_message
-        )
-        # Entry와 약간 간격을 두고 붙여줍니다.
-        self.debug_button.pack(side=tk.TOP, anchor='center', pady=(0, 10), ipady=2)
-
-
-    #디버깅 모드 전용 예외처리 확인 코드 일단 적어둘게요
-    def send_debug_message(self):
-        raw = self.debug_entry.get().strip()
-        if not raw:
-            return
-
-        try:
-        # 1) 사용자가 입력한 "\\r\\n" 시퀀스를 실제 CRLF로 바꿔 줍니다.
-        #    r'\r\n' 은 파이썬 raw 문자열 리터럴에서 “백슬래시+r, 백슬래시+n”을 의미합니다.
-            msg_with_crlf = raw.replace(r'\r\n', '\r\n')
-        # 2) 프로토콜상 맨 끝에는 반드시 "\r\n\r\n"이 와야 하므로, 없으면 붙여 줍니다.
-            if not msg_with_crlf.endswith('\r\n\r\n'):
-                msg_with_crlf += '\r\n\r\n'
-        # 3) 이제 실제 CRLF가 들어간 문자열을 소켓으로 전송
-            self.socket.send(msg_with_crlf.encode())
-
-        #보낸거 좌표로 구해서 표시하기
-            parsed = check_msg(msg_with_crlf, self.send_ip)
-            r, c = map(int, parsed['headers']['New-Move'].strip('()').split(','))
-            loc = r * self.line_size + c
-
-        # 4) **보드에 내 기호를 그림**  ← 이 부분이 빠졌기 때문에 화면에 표시되지 않습니다.
-            self.update_board(self.user, loc)
-
-
-        # 4) ACK를 한 번 받아 보고, 정상 포맷인지 검사
-            ack = self.socket.recv(SIZE).decode()
-            if not check_msg(ack, self.send_ip) or not ack.startswith('ACK ETTTP/1.0'):
-                return
-            else:
-                self.my_turn = 0
-                self.l_status_bullet.config(fg='red')
-                self.l_status['text'] = ['Hold']
-            # 8) 상대 턴으로 전환: get_move() 스레드 시작
-                _thread.start_new_thread(self.get_move, ())
-
-        except Exception as e:
-            print(f'[DEBUG ERROR] {e}')
-
 
     def create_status_frame(self):
         self.status_frame = tk.Frame()
@@ -287,6 +223,61 @@ class TTT(tk.Tk):
             # 예기치 않은 메시지
             self.socket.close()
             self.quit()
+
+
+    #디버깅 모드 추가 코드
+    def create_command_mode_widgets(self):
+        self.debug_frame = tk.Frame(self, bg="black")
+        self.debug_frame.pack(side=tk.BOTTOM, pady=10, fill=tk.X)
+
+        #debug_input_example 보니 한줄 => Text 대신에 Entry(한줄 입력짜리)로 변경
+        self.debug_entry = tk.Entry(self.debug_frame, width=40, bg="white", fg="black", font=("Helvetica", 12))
+        self.debug_entry.pack(side=tk.TOP, anchor='center', pady=(10, 5))
+
+        #Send 버튼
+        self.debug_button = tk.Button(
+            self.debug_frame,
+            text="Send",
+            font=("Helvetica", 12),
+            bg="#4CAF50",       # 녹색 버튼
+            fg="black",
+            command=self.send_debug
+        )
+        # Entry와 약간 간격을 두고 붙여줍니다.
+        self.debug_button.pack(side=tk.TOP, anchor='center', pady=(0, 10), ipady=2)
+
+    #텍스트 박스에서 엔터로 입력된 문자열을 ETTTP용으로 바꿔줌
+    def normalize_debug_msg(raw_msg):
+        lines = raw_msg.strip().split('\n')
+        return '\r\n'.join(line.strip() for line in lines) + '\r\n\r\n'
+
+    def send_debug(self):
+        raw = self.debug_entry.get().strip()
+        if not raw:
+            return
+        try:
+            msg_with_crlf = raw.replace(r'\r\n', '\r\n')
+        #이제 실제 CRLF가 들어간 문자열을 소켓으로 전송
+            self.socket.send(msg_with_crlf.encode())
+
+        #보낸거 좌표로 구해서 표시하기
+            parsed = check_msg(msg_with_crlf, self.send_ip)
+            r, c = map(int, parsed['headers']['New-Move'].strip('()').split(','))
+            loc = r * self.line_size + c
+        # **보드에 내 기호를 그림**  ← 이 부분이 빠졌기 때문에 화면에 표시되지 않습니다.
+            self.update_board(self.user, loc)
+        # ACK를 한 번 받아 보고, 정상 포맷인지 검사
+            ack = self.socket.recv(SIZE).decode()
+            if not check_msg(ack, self.send_ip) or not ack.startswith('ACK ETTTP/1.0'):
+                return
+            else:
+                self.my_turn = 0
+                self.l_status_bullet.config(fg='red')
+                self.l_status['text'] = ['Hold']
+            # 8) 상대 턴으로 전환: get_move() 스레드 시작
+                _thread.start_new_thread(self.get_move, ())
+        except Exception as e:
+            print(f'[DEBUG ERROR] {e}')
 
     def send_move(self, selection):
         row, col = divmod(selection, self.line_size)
